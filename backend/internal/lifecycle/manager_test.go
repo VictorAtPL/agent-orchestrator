@@ -2822,6 +2822,36 @@ func TestPRObservation_ReviewCommentsNudgeAgent(t *testing.T) {
 	}
 }
 
+func TestPRObservation_RobotPrefixedCommentDoesNotNudgeAgent(t *testing.T) {
+	m, st, msg := newManager()
+	st.sessions["mer-1"] = working("mer-1")
+	st.comments["pr1"] = []domain.PullRequestComment{
+		{ID: "1", ThreadID: "T1", Author: "VictorAtPL", File: "foo.go", Line: 2, Body: "\U0001F916: keep the directive", AutoInjectReview: true},
+	}
+	o := ports.PRObservation{Fetched: true, URL: "pr1", Review: domain.ReviewChangesRequest}
+	if err := m.ApplyPRObservation(ctx, "mer-1", o); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.msgs) != 0 {
+		t.Fatalf("robot-prefixed comment must not nudge, got %v", msg.msgs)
+	}
+}
+
+func TestPRObservation_RobotPrefixFromOtherAuthorStillNudges(t *testing.T) {
+	m, st, msg := newManager()
+	st.sessions["mer-1"] = working("mer-1")
+	st.comments["pr1"] = []domain.PullRequestComment{
+		{ID: "1", ThreadID: "T1", Author: "alice", File: "foo.go", Line: 2, Body: "\U0001F916: hi", AutoInjectReview: true},
+	}
+	o := ports.PRObservation{Fetched: true, URL: "pr1", Review: domain.ReviewChangesRequest}
+	if err := m.ApplyPRObservation(ctx, "mer-1", o); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.msgs) != 1 {
+		t.Fatalf("other author's comment must nudge, got %v", msg.msgs)
+	}
+}
+
 func TestPRObservation_AnchoredBotReviewNudgesAgent(t *testing.T) {
 	m, st, msg := newManager()
 	st.sessions["mer-1"] = working("mer-1")

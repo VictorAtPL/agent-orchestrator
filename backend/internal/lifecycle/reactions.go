@@ -202,7 +202,7 @@ func (m *Manager) ApplyPRObservation(ctx context.Context, id domain.SessionID, o
 		if hasUnresolvedComments(o.Comments) {
 			comments := unresolvedReviewComments(o.Comments)
 			for _, comment := range comments {
-				if !comment.AutoInjectReview {
+				if !comment.AutoInjectReview || isOwnRobotComment(comment) {
 					continue
 				}
 				commentSlice := []ports.PRCommentObservation{comment}
@@ -807,6 +807,13 @@ func formatCIFailureMessage(checks []ports.PRCheckObservation) string {
 	}
 	msg.WriteString("\nUse the included log tail and failure URL first; fetch full CI logs only if you need additional context. Fix the issues and push again.")
 	return msg.String()
+}
+
+// Local patch: the user answers review threads on their own PRs with "🤖:"
+// comments, which must not wake the worker.
+func isOwnRobotComment(c ports.PRCommentObservation) bool {
+	return strings.EqualFold(strings.TrimSpace(c.Author), "VictorAtPL") &&
+		strings.HasPrefix(strings.TrimSpace(c.Body), "🤖:")
 }
 
 func unresolvedReviewComments(comments []ports.PRCommentObservation) []ports.PRCommentObservation {
