@@ -70,6 +70,37 @@ func TestLocalProviderCatalogReadsEachHarnessOwnCache(t *testing.T) {
 	}
 }
 
+func TestOpenCodeCacheHonorsEnabledProviders(t *testing.T) {
+	// opencode-v2 has no models.dev cache path (hasLocalProviderCatalog), so
+	// only v1 reaches the cache merge.
+	env := providerTestEnv(t)
+	env["XDG_CACHE_HOME"] = t.TempDir()
+	path := providerCachePath("opencode", env)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"litellm":{"models":{"glm/flash":{"name":"Flash"}}},"openrouter":{"models":{"org/model":{"name":"Model"}}}}`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Without an enabled_providers list the cache is kept whole.
+	catalog := localProviderCatalog(context.Background(), "opencode", "", "", env)
+	if len(catalog.Models) != 2 || len(catalog.Providers) != 2 {
+		t.Fatalf("unfiltered catalog = %#v", catalog)
+	}
+	configPath := filepath.Join(env["HOME"], ".config", "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(`{"enabled_providers":["litellm"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	catalog = localProviderCatalog(context.Background(), "opencode", "", "", env)
+	if len(catalog.Models) != 1 || catalog.Models[0].ID != "litellm/glm/flash" || !reflect.DeepEqual(catalog.Providers, []string{"litellm"}) {
+		t.Fatalf("filtered catalog = %#v", catalog)
+	}
+}
+
 func TestOMPProviderCacheUsesModelProviderNotAccountCacheKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "models.db")
 	db, err := sql.Open("sqlite", path)

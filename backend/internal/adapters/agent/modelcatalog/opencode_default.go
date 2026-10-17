@@ -1,6 +1,7 @@
 package modelcatalog
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +17,9 @@ type openCodeLayer struct {
 	model   string
 	certain bool
 	unknown bool
+	// enabledProviders is the layer's enabled_providers list; nil when the
+	// layer does not set one.
+	enabledProviders []string
 }
 
 // openCodeManagedConfigDirs lists the system directories OpenCode reads
@@ -119,14 +123,19 @@ func openCodeProjectConfigUnknown(major int, workingDir string) bool {
 func openCodeDirLayer(dir string, certain bool, names ...string) openCodeLayer {
 	layer := openCodeLayer{certain: certain}
 	for _, name := range names {
-		model := openCodeFileLayer(filepath.Join(dir, name), certain).model
-		if model == "" {
+		file := openCodeFileLayer(filepath.Join(dir, name), certain)
+		if file.model == "" && file.enabledProviders == nil {
 			continue
 		}
-		if layer.model != "" && !strings.EqualFold(layer.model, model) {
-			layer.certain = false
+		if file.model != "" {
+			if layer.model != "" && !strings.EqualFold(layer.model, file.model) {
+				layer.certain = false
+			}
+			layer.model = file.model
 		}
-		layer.model = model
+		if file.enabledProviders != nil {
+			layer.enabledProviders = file.enabledProviders
+		}
 	}
 	return layer
 }
@@ -136,5 +145,68 @@ func openCodeFileLayer(path string, certain bool) openCodeLayer {
 	if err != nil {
 		return openCodeLayer{certain: certain}
 	}
-	return openCodeLayer{model: strings.TrimSpace(parseJSONCModelKey(raw)), certain: certain}
+	return openCodeLayer{
+		model:            strings.TrimSpace(parseJSONCModelKey(raw)),
+		enabledProviders: parseOpenCodeEnabledProviders(raw),
+		certain:          certain,
+	}
+}
+
+func parseOpenCodeEnabledProviders(raw []byte) []string {
+	var config struct {
+		EnabledProviders []string `json:"enabled_providers"`
+	}
+	if json.Unmarshal(stripJSONC(raw), &config) != nil {
+		return nil
+	}
+	providers := make([]string, 0, len(config.EnabledProviders))
+	for _, provider := range config.EnabledProviders {
+		if provider = strings.TrimSpace(provider); provider != "" {
+			providers = append(providers, provider)
+		}
+	}
+	if len(providers) == 0 {
+		return nil
+	}
+	return providers
+}
+
+// openCodeEnabledProviders returns the enabled_providers list OpenCode reads
+// from the same layers resolveOpenCodeModel trusts, or nil when no trusted
+// layer restricts providers. Only providers explicitly enabled in config are
+// reported: an unset list means OpenCode shows its whole catalog, so there is
+// nothing to filter by.
+func openCodeEnabledProviders(major int, home, workingDir string, env map[string]string) []string {
+	var layers []openCodeLayer
+	if configHome := xdgDir(home, env, "XDG_CONFIG_HOME", ".config"); configHome != "" {
+		layers = append(layers, openCodeDirLayer(filepath.Join(configHome, "opencode"), true, "config.json", "opencode.json", "opencode.jsonc"))
+	}
+	if custom := envValue(env, "OPENCODE_CONFIG"); custom != "" {
+		layers = append(layers, openCodeFileLayer(custom, false))
+	}
+	if openCodeProjectConfigUnknown(major, workingDir) {
+		layers = append(layers, openCodeLayer{unknown: true})
+	}
+	if configDir := envValue(env, "OPENCODE_CONFIG_DIR"); configDir != "" {
+		layers = append(layers, openCodeDirLayer(configDir, false, "opencode.json", "opencode.jsonc"))
+	}
+	if content := envValue(env, "OPENCODE_CONFIG_CONTENT"); content != "" {
+		layers = append(layers, openCodeLayer{enabledProviders: parseOpenCodeEnabledProviders([]byte(content)), certain: true})
+	}
+	for _, dir := range openCodeManagedConfigDirs() {
+		layers = append(layers, openCodeDirLayer(dir, true, "opencode.json", "opencode.jsonc"))
+	}
+	for i := len(layers) - 1; i >= 0; i-- {
+		if layers[i].unknown {
+			return nil
+		}
+		if layers[i].enabledProviders == nil {
+			continue
+		}
+		if !layers[i].certain {
+			return nil
+		}
+		return layers[i].enabledProviders
+	}
+	return nil
 }

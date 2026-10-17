@@ -36,6 +36,9 @@ func localProviderCatalog(ctx context.Context, agentID, binary, workingDir strin
 	case "opencode", "kilocode", "mimo-code":
 		if raw, err := readProviderCatalog(providerCachePath(agentID, env)); err == nil {
 			result = parseProviderSnapshot(raw)
+			if agentID == "opencode" || agentID == "opencode-v2" {
+				result = filterOpenCodeCache(result, agentID, workingDir, env)
+			}
 		}
 	case "omp":
 		result = ompProviderCatalog(ctx, filepath.Join(piCatalogDir(agentID, env), "models.db"))
@@ -76,6 +79,38 @@ func providerCachePath(agentID string, env map[string]string) string {
 		root = filepath.Join(catalogHome(env), ".cache")
 	}
 	return filepath.Join(root, name, "models.json")
+}
+
+// filterOpenCodeCache drops the models.dev cache entries for providers the
+// OpenCode config does not enable. `opencode models` honors enabled_providers,
+// but the cache supplement bypassed that restriction and flooded the picker
+// with thousands of models for providers the user never configured.
+func filterOpenCodeCache(catalog ports.AgentModelCatalog, agentID, workingDir string, env map[string]string) ports.AgentModelCatalog {
+	enabled := openCodeEnabledProviders(2, catalogHome(env), workingDir, env)
+	if agentID == "opencode" {
+		enabled = openCodeEnabledProviders(1, catalogHome(env), workingDir, env)
+	}
+	if len(enabled) == 0 {
+		return catalog
+	}
+	allowed := make(map[string]bool, len(enabled))
+	for _, provider := range enabled {
+		allowed[strings.ToLower(provider)] = true
+	}
+	models := make([]ports.AgentModelInfo, 0, len(catalog.Models))
+	for _, model := range catalog.Models {
+		if allowed[strings.ToLower(model.Provider)] {
+			models = append(models, model)
+		}
+	}
+	providers := make([]string, 0, len(catalog.Providers))
+	for _, provider := range catalog.Providers {
+		if allowed[strings.ToLower(provider)] {
+			providers = append(providers, provider)
+		}
+	}
+	catalog.Models, catalog.Providers = models, providers
+	return catalog
 }
 
 func catalogHome(env map[string]string) string {
