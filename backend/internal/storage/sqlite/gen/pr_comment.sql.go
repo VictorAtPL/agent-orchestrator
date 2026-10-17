@@ -72,7 +72,7 @@ func (q *Queries) InsertLegacyPRComment(ctx context.Context, arg InsertLegacyPRC
 }
 
 const listPRComments = `-- name: ListPRComments :many
-SELECT pr_url, comment_id, author, file, line, body, resolved, created_at, thread_id, url, is_bot, auto_inject_review, review_id
+SELECT pr_url, comment_id, author, file, line, body, resolved, created_at, thread_id, url, is_bot, auto_inject_review, review_id, comments_total_count, comments_truncated
 FROM pr_comment WHERE pr_url = ? ORDER BY created_at, comment_id
 `
 
@@ -99,6 +99,8 @@ func (q *Queries) ListPRComments(ctx context.Context, prUrl string) ([]PRComment
 			&i.IsBot,
 			&i.AutoInjectReview,
 			&i.ReviewID,
+			&i.CommentsTotalCount,
+			&i.CommentsTruncated,
 		); err != nil {
 			return nil, err
 		}
@@ -150,8 +152,8 @@ func (q *Queries) MarkPRCommentsResolvedForThread(ctx context.Context, arg MarkP
 }
 
 const upsertPRComment = `-- name: UpsertPRComment :exec
-INSERT INTO pr_comment (pr_url, comment_id, author, file, line, body, resolved, created_at, thread_id, review_id, url, is_bot, auto_inject_review)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO pr_comment (pr_url, comment_id, author, file, line, body, resolved, created_at, thread_id, review_id, url, is_bot, auto_inject_review, comments_total_count, comments_truncated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (pr_url, comment_id) DO UPDATE SET
     author = excluded.author,
     file = excluded.file,
@@ -162,23 +164,27 @@ ON CONFLICT (pr_url, comment_id) DO UPDATE SET
     thread_id = excluded.thread_id,
     review_id = excluded.review_id,
     url = excluded.url,
-    is_bot = excluded.is_bot
+    is_bot = excluded.is_bot,
+    comments_total_count = excluded.comments_total_count,
+    comments_truncated = excluded.comments_truncated
 `
 
 type UpsertPRCommentParams struct {
-	PRURL            string
-	CommentID        string
-	Author           string
-	File             string
-	Line             int64
-	Body             string
-	Resolved         bool
-	CreatedAt        time.Time
-	ThreadID         string
-	ReviewID         string
-	URL              string
-	IsBot            int64
-	AutoInjectReview bool
+	PRURL              string
+	CommentID          string
+	Author             string
+	File               string
+	Line               int64
+	Body               string
+	Resolved           bool
+	CreatedAt          time.Time
+	ThreadID           string
+	ReviewID           string
+	URL                string
+	IsBot              int64
+	AutoInjectReview   bool
+	CommentsTotalCount int64
+	CommentsTruncated  int64
 }
 
 func (q *Queries) UpsertPRComment(ctx context.Context, arg UpsertPRCommentParams) error {
@@ -196,6 +202,8 @@ func (q *Queries) UpsertPRComment(ctx context.Context, arg UpsertPRCommentParams
 		arg.URL,
 		arg.IsBot,
 		arg.AutoInjectReview,
+		arg.CommentsTotalCount,
+		arg.CommentsTruncated,
 	)
 	return err
 }

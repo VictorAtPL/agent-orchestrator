@@ -2822,6 +2822,41 @@ func TestPRObservation_ReviewCommentsNudgeAgent(t *testing.T) {
 	}
 }
 
+func TestPRObservation_TruncatedThreadNudgeTellsAgentAboutOlderComments(t *testing.T) {
+	m, st, msg := newManager()
+	st.sessions["mer-1"] = working("mer-1")
+	// A comment from a 12-comment thread fetched as a 5-comment tail window.
+	st.comments["pr1"] = []domain.PullRequestComment{
+		{ID: "1", ThreadID: "T1", Author: "alice", File: "foo.go", Line: 12, Body: "update desc as well", URL: "https://github.com/o/r/pull/1#discussion_r1", AutoInjectReview: true, CommentsTotalCount: 12, CommentsTruncated: true},
+	}
+	o := ports.PRObservation{Fetched: true, URL: "pr1", Review: domain.ReviewChangesRequest}
+	if err := m.ApplyPRObservation(ctx, "mer-1", o); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.msgs) != 1 {
+		t.Fatalf("want review nudge, got %v", msg.msgs)
+	}
+	if !strings.Contains(msg.msgs[0], "11 more earlier comment(s) not shown here") {
+		t.Fatalf("truncated-thread nudge missing the older-comments count:\n%s", msg.msgs[0])
+	}
+	if !strings.Contains(msg.msgs[0], "only partially fetched") {
+		t.Fatalf("truncated-thread nudge missing the partial-fetch note:\n%s", msg.msgs[0])
+	}
+
+	// A fully-fetched thread must not carry the truncation note.
+	m2, st2, msg2 := newManager()
+	st2.sessions["mer-1"] = working("mer-1")
+	st2.comments["pr1"] = []domain.PullRequestComment{
+		{ID: "1", ThreadID: "T1", Author: "alice", File: "foo.go", Line: 12, Body: "fix this", AutoInjectReview: true, CommentsTotalCount: 1},
+	}
+	if err := m2.ApplyPRObservation(ctx, "mer-1", ports.PRObservation{Fetched: true, URL: "pr1", Review: domain.ReviewChangesRequest}); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg2.msgs) != 1 || strings.Contains(msg2.msgs[0], "more earlier comment") || strings.Contains(msg2.msgs[0], "partially fetched") {
+		t.Fatalf("complete thread must not get truncation notes, got %v", msg2.msgs)
+	}
+}
+
 func TestPRObservation_RobotPrefixedCommentDoesNotNudgeAgent(t *testing.T) {
 	m, st, msg := newManager()
 	st.sessions["mer-1"] = working("mer-1")

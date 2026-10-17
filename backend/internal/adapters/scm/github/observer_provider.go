@@ -27,9 +27,12 @@ const (
 	// githubReviewThreadPageSize fetches the latest review window cheaply for
 	// the common case while still covering active review feedback.
 	githubReviewThreadPageSize = 50
-	// githubReviewCommentLimitPerThread stores only the leading comments needed
+	// githubReviewCommentLimitPerThread stores only the latest comments needed
 	// to understand a thread without making one pathological thread dominate
-	// GraphQL cost.
+	// GraphQL cost. It is a last:N window, not first:N: long back-and-forth
+	// threads keep landing their newest replies (where a human follow-up
+	// usually is) inside the window, and the totalCount comparison reports
+	// exactly how many older comments the window hides.
 	githubReviewCommentLimitPerThread = 5
 	// githubReviewThreadMaxPages bounds the explicit older-thread fallback.
 	githubReviewThreadMaxPages = 2
@@ -711,7 +714,7 @@ func buildReviewThreadsQuery(ref ports.SCMPRRef, beforeCursor string, includeRev
 	return fmt.Sprintf(`query{
 repo: repository(owner:%s,name:%s){ pullRequest(number:%d){ reviewDecision%s reviewThreads(last:%d, before:%s){ nodes{
   id isResolved path line
-  comments(first:%d){ nodes{ id body url pullRequestReview{ databaseId } author{ login __typename } } }
+  comments(last:%d){ totalCount nodes{ id body url pullRequestReview{ databaseId } author{ login __typename } } }
 } pageInfo{ hasPreviousPage startCursor } } } }
 }`, graphQLString(ref.Repo.Owner), graphQLString(ref.Repo.Name), ref.Number, reviewSelection, githubReviewThreadPageSize, before, githubReviewCommentLimitPerThread)
 }
@@ -745,14 +748,16 @@ func reviewStateFromGraphQL(state any) domain.ReviewDecision {
 }
 
 func scmThreadFromGraphQL(th map[string]any) ports.SCMReviewThreadObservation {
-	out := ports.SCMReviewThreadObservation{
-		ID:       str(th["id"]),
-		Path:     str(th["path"]),
-		Line:     int(num(th["line"])),
-		Resolved: boolv(th["isResolved"]),
-	}
 	comments, _ := th["comments"].(map[string]any)
 	commentNodes := nodes(comments["nodes"])
+	totalCount, _ := comments["totalCount"].(float64)
+	out := ports.SCMReviewThreadObservation{
+		ID:                 str(th["id"]),
+		Path:               str(th["path"]),
+		Line:               int(num(th["line"])),
+		Resolved:           boolv(th["isResolved"]),
+		CommentsTotalCount: int(totalCount),
+	}
 	allCommentsBot := len(commentNodes) > 0
 	for _, cn := range commentNodes {
 		author, _ := cn["author"].(map[string]any)
@@ -771,6 +776,9 @@ func scmThreadFromGraphQL(th map[string]any) ports.SCMReviewThreadObservation {
 		})
 	}
 	out.IsBot = allCommentsBot
+	// last:N plus the reported total: truncation is exact, and the count
+	// doubles as the "N older comments exist" signal for the agent message.
+	out.CommentsTruncated = out.CommentsTotalCount > len(out.Comments)
 	return out
 }
 

@@ -116,22 +116,6 @@ type PullRequestCheck struct {
 	CreatedAt  time.Time
 }
 
-// PullRequestComment is one normalized review comment for a pull request.
-type PullRequestComment struct {
-	ThreadID         string
-	ReviewID         string
-	ID               string
-	Author           string
-	File             string
-	Line             int
-	Body             string
-	URL              string
-	Resolved         bool
-	IsBot            bool
-	CreatedAt        time.Time
-	AutoInjectReview bool
-}
-
 // IsActionableReviewComment reports whether a review comment should block
 // ready-to-merge state and be surfaced to the agent. Human comments are always
 // actionable; bot comments need a concrete file and line anchor so status
@@ -152,6 +136,31 @@ type PullRequestReviewThread struct {
 	IsBot        bool
 	SemanticHash string
 	UpdatedAt    time.Time
+}
+
+// PullRequestComment is one normalized review comment for a pull request.
+type PullRequestComment struct {
+	ThreadID         string
+	ReviewID         string
+	ID               string
+	Author           string
+	File             string
+	Line             int
+	Body             string
+	URL              string
+	Resolved         bool
+	IsBot            bool
+	CreatedAt        time.Time
+	AutoInjectReview bool
+	// CommentsTotalCount is the provider-reported total comment count of the
+	// thread this comment belongs to; zero when the provider does not report
+	// one. It is stored per comment row (the thread table has no
+	// comment-count column), so every comment of one thread carries the same
+	// value.
+	CommentsTotalCount int
+	// CommentsTruncated is true when the stored comments for this thread are
+	// a bounded last:N window rather than the complete thread.
+	CommentsTruncated bool
 }
 
 // PullRequestReview is one submitted provider review for a pull request.

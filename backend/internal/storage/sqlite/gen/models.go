@@ -495,19 +495,21 @@ type PRCheck struct {
 }
 
 type PRComment struct {
-	PRURL            string
-	CommentID        string
-	Author           string
-	File             string
-	Line             int64
-	Body             string
-	Resolved         bool
-	CreatedAt        time.Time
-	ThreadID         string
-	URL              string
-	IsBot            int64
-	AutoInjectReview bool
-	ReviewID         string
+	PRURL              string
+	CommentID          string
+	Author             string
+	File               string
+	Line               int64
+	Body               string
+	Resolved           bool
+	CreatedAt          time.Time
+	ThreadID           string
+	URL                string
+	IsBot              int64
+	AutoInjectReview   bool
+	ReviewID           string
+	CommentsTotalCount int64
+	CommentsTruncated  int64
 }
 
 type PRReview struct {

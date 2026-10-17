@@ -611,16 +611,18 @@ func prCommentObservations(comments []domain.PullRequestComment) []ports.PRComme
 			continue
 		}
 		out = append(out, ports.PRCommentObservation{
-			ID:               comment.ID,
-			ThreadID:         comment.ThreadID,
-			ReviewID:         comment.ReviewID,
-			Author:           comment.Author,
-			File:             comment.File,
-			Line:             comment.Line,
-			Body:             comment.Body,
-			URL:              comment.URL,
-			Resolved:         comment.Resolved,
-			AutoInjectReview: comment.AutoInjectReview,
+			ID:                 comment.ID,
+			ThreadID:           comment.ThreadID,
+			ReviewID:           comment.ReviewID,
+			Author:             comment.Author,
+			File:               comment.File,
+			Line:               comment.Line,
+			Body:               comment.Body,
+			URL:                comment.URL,
+			Resolved:           comment.Resolved,
+			AutoInjectReview:   comment.AutoInjectReview,
+			CommentsTotalCount: comment.CommentsTotalCount,
+			CommentsTruncated:  comment.CommentsTruncated,
 		})
 	}
 	return out
@@ -867,6 +869,7 @@ func formatReviewCommentsMessage(comments []ports.PRCommentObservation) string {
 	}
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "The following %d unresolved review comment(s) are on your PR as of just now. You should not need to re-fetch this data unless you need additional context.\n", len(comments))
+	truncated := false
 	for i, c := range comments {
 		location := "(general)"
 		if c.File != "" {
@@ -890,9 +893,19 @@ func formatReviewCommentsMessage(comments []ports.PRCommentObservation) string {
 		if c.ThreadID != "" {
 			fmt.Fprintf(&msg, "\n   Thread ID: %s", domain.SanitizeControlChars(c.ThreadID))
 		}
+		if hidden := c.CommentsTotalCount - 1; c.CommentsTruncated && hidden > 0 {
+			truncated = true
+			// AO stores only the latest window of a long thread. The comment
+			// above is real, but older replies exist on the provider; say so
+			// instead of implying this is the whole conversation.
+			fmt.Fprintf(&msg, "\n   Note: this thread has %d more earlier comment(s) not shown here — fetch the thread from the PR if you need that context.", hidden)
+		}
 		msg.WriteString("\n")
 	}
 	msg.WriteString("\nAddress each comment and push fixes. Use the thread ID to resolve each thread directly after pushing when available. You should not need to re-fetch review data unless you need additional context beyond what is provided here.")
+	if truncated {
+		msg.WriteString(" Threads flagged with a truncation note were only partially fetched; fetch those threads yourself before assuming the shown comments are the full conversation.")
+	}
 	return msg.String()
 }
 

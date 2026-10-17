@@ -770,6 +770,7 @@ func genCommentParams(prURL string, c domain.PullRequestComment) gen.UpsertPRCom
 		PRURL: prURL, CommentID: c.ID, Author: c.Author, File: c.File,
 		Line: int64(c.Line), Body: c.Body, Resolved: c.Resolved, CreatedAt: c.CreatedAt,
 		ThreadID: c.ThreadID, ReviewID: c.ReviewID, URL: c.URL, IsBot: boolInt(c.IsBot), AutoInjectReview: c.AutoInjectReview,
+		CommentsTotalCount: int64(c.CommentsTotalCount), CommentsTruncated: boolInt(c.CommentsTruncated),
 	}
 }
 
@@ -787,6 +788,7 @@ func commentFromGen(c gen.PRComment) domain.PullRequestComment {
 		File: c.File, Line: int(c.Line), Body: c.Body, URL: c.URL,
 		Resolved: c.Resolved, IsBot: c.IsBot != 0, CreatedAt: c.CreatedAt,
 		AutoInjectReview: c.AutoInjectReview,
+		CommentsTotalCount: int(c.CommentsTotalCount), CommentsTruncated: c.CommentsTruncated != 0,
 	}
 }
 

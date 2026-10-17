@@ -1503,8 +1503,11 @@ func TestFetchReviewThreadsUsesLatestWindowWithoutFallbackWhenOldestResolved(t *
 		if !strings.Contains(string(body), "submittedAt body commit") {
 			t.Fatalf("review query should request the review body and commit, body=%s", body)
 		}
-		if !strings.Contains(string(body), "comments(first:5)") {
-			t.Fatalf("review query should cap comments per thread, body=%s", body)
+		if !strings.Contains(string(body), "comments(last:5)") {
+			t.Fatalf("review query should fetch the latest comment window per thread, body=%s", body)
+		}
+		if !strings.Contains(string(body), "totalCount") {
+			t.Fatalf("review query should request the thread's total comment count, body=%s", body)
 		}
 		if !strings.Contains(string(body), "pullRequestReview{ databaseId }") {
 			t.Fatalf("review query should request each comment's parent review id, body=%s", body)
@@ -1614,6 +1617,63 @@ func TestFetchReviewThreadsFetchesOneOlderPageWhenOldestUnresolved(t *testing.T)
 	}
 	if len(review.Threads) != 2 || review.Threads[0].ID != "older" || review.Threads[1].ID != "latest-unresolved" {
 		t.Fatalf("threads order = %#v", review.Threads)
+	}
+}
+
+// TestFetchReviewThreadsLongThreadKeepsLatestCommentsAndFlagsTruncation is the
+// regression test for long review threads: the per-thread comment window is a
+// last:N slice, so a reply added after a thread has grown past the cap (the
+// "update desc as well" follow-up on a 12-comment thread) is still returned,
+// in chronological order, with the thread's totalCount marking exactly how
+// many older comments the window hides. The previous first:N window pinned the
+// oldest comments in place and made every later reply invisible forever.
+func TestFetchReviewThreadsLongThreadKeepsLatestCommentsAndFlagsTruncation(t *testing.T) {
+	fake := newFakeGH(t)
+	fake.on(http.MethodPost, "/graphql", func(w http.ResponseWriter, r *http.Request) {
+		// The provider stores 12 comments; the window carries the latest 5.
+		// IDs encode position: c01 is oldest, c12 is the newest human reply.
+		comments := make([]any, 0, 5)
+		for i := 8; i <= 12; i++ {
+			comments = append(comments, map[string]any{
+				"id":    fmt.Sprintf("c%02d", i),
+				"body":  fmt.Sprintf("comment %d", i),
+				"url":   fmt.Sprintf("https://github.com/o/r/pull/1#discussion_r%d", i),
+				"author": map[string]any{"login": "alice", "__typename": "User"},
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"repo": map[string]any{"pullRequest": map[string]any{
+				"reviewDecision": "COMMENTED",
+				"reviewThreads": map[string]any{
+					"nodes": []any{map[string]any{
+						"id": "long-thread", "path": "main.go", "line": 3, "isResolved": false,
+						"comments": map[string]any{"totalCount": 12, "nodes": comments},
+					}},
+					"pageInfo": map[string]any{"hasPreviousPage": false},
+				},
+			}}},
+		})
+	})
+	p := newProviderForTest(t, fake)
+	review, err := p.FetchReviewThreads(ctx(), ports.SCMPRRef{Repo: ports.SCMRepo{Provider: "github", Host: "github.com", Owner: "o", Name: "r", Repo: "o/r"}, Number: 1})
+	if err != nil {
+		t.Fatalf("FetchReviewThreads: %v", err)
+	}
+	if len(review.Threads) != 1 {
+		t.Fatalf("threads = %#v", review.Threads)
+	}
+	th := review.Threads[0]
+	if th.CommentsTotalCount != 12 || !th.CommentsTruncated {
+		t.Fatalf("long thread not flagged truncated: totalCount=%d truncated=%v", th.CommentsTotalCount, th.CommentsTruncated)
+	}
+	if len(th.Comments) != 5 {
+		t.Fatalf("comments = %d, want the 5-comment window", len(th.Comments))
+	}
+	// The newest comment — the one that arrived after the thread grew past the
+	// cap — must be present, and the window stays in chronological order.
+	if th.Comments[0].ID != "c08" || th.Comments[len(th.Comments)-1].ID != "c12" {
+		t.Fatalf("window order = %s..%s, want chronological c08..c12", th.Comments[0].ID, th.Comments[len(th.Comments)-1].ID)
 	}
 }
 

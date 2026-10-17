@@ -269,8 +269,20 @@ type SCMReviewThreadObservation struct {
 	Resolved bool
 	// IsBot is true when the thread's comments are all/primarily bot-authored.
 	IsBot bool
-	// Comments contains normalized comments in this review thread.
+	// CommentsTotalCount is the provider-reported total number of comments in
+	// the thread, including ones the fetch did not return. Zero means the
+	// provider did not report a total (GitLab's discussion fetch returns every
+	// comment, so its adapter leaves this unset).
+	CommentsTotalCount int
+	// Comments contains normalized comments in this review thread. When
+	// CommentsTruncated is true it is a last:N tail of the thread, not the
+	// complete set.
 	Comments []SCMReviewCommentObservation
+	// CommentsTruncated is true when the provider returned only part of the
+	// thread's comments (a bounded last:N window). Consumers should treat
+	// Comments as "the latest exchanges" and surface the truncation to the
+	// agent instead of implying it sees the whole thread.
+	CommentsTruncated bool
 }
 
 // SCMReviewCommentObservation is one normalized review comment.

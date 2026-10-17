@@ -58,4 +58,11 @@ type PRCommentObservation struct {
 	URL              string
 	Resolved         bool
 	AutoInjectReview bool
+	// CommentsTotalCount mirrors the provider's total comment count for the
+	// thread this comment belongs to (0 when the provider does not report
+	// one). CommentsTruncated marks the stored comments as a bounded window.
+	// The review-comment nudge uses them to tell the agent how much of the
+	// thread it has not been shown.
+	CommentsTotalCount int
+	CommentsTruncated  bool
 }
