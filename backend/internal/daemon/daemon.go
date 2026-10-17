@@ -925,7 +925,7 @@ func Run() error {
 	bs.HostID = hostIdentity.HostID
 	// Pushes include the authoritative host identity so a phone can reject
 	// same-numbered sessions on another machine. No identity means no push.
-	if pushDevices != nil && hostIdentity.HostID != "" {
+	if pushDevices != nil && hostIdentity.HostID != "" && os.Getenv("AO_PUSH_ENABLED") == "1" {
 		dispatcher := push.NewDispatcher(notificationHub, pushDevices, push.NewExpoClient(os.Getenv("EXPO_ACCESS_TOKEN")), hostIdentity.HostID, log)
 		go dispatcher.Run(ctx)
 	}

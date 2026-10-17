@@ -138,8 +138,6 @@ import {
 import { installCloudLocalAuthIPC } from "./main/cloud-auth-local";
 import { createCloudAgentProxy } from "./main/cloud-agent-proxy";
 import { installCloudCpProxy } from "./main/cloud-cp-proxy";
-import { DEFAULT_POSTHOG_HOST, DEFAULT_POSTHOG_PROJECT_KEY } from "./shared/posthog-config";
-import { DEFAULT_SENTRY_DSN } from "./shared/sentry-config";
 import { buildTelemetryBootstrap, rendererTelemetryEnabled } from "./shared/telemetry";
 import {
 	TELEMETRY_CLEAR_RENDERER_QUEUES_CHANNEL,
@@ -1249,15 +1247,15 @@ const configuredLoginShell = process.platform === "darwin" ? (os.userInfo().shel
 // exercise the export path from a dev build.
 function telemetryOverrides(): Record<string, string> {
 	return {
-		AO_TELEMETRY_EVENTS: process.env.AO_TELEMETRY_EVENTS ?? "on",
-		AO_TELEMETRY_REMOTE: process.env.AO_TELEMETRY_REMOTE ?? (isDev ? "off" : "posthog"),
-		AO_TELEMETRY_POSTHOG_KEY: process.env.AO_TELEMETRY_POSTHOG_KEY ?? DEFAULT_POSTHOG_PROJECT_KEY,
-		AO_TELEMETRY_POSTHOG_HOST: process.env.AO_TELEMETRY_POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST,
+		AO_TELEMETRY_EVENTS: process.env.AO_TELEMETRY_EVENTS ?? "off",
+		AO_TELEMETRY_REMOTE: process.env.AO_TELEMETRY_REMOTE ?? "off",
+		AO_TELEMETRY_POSTHOG_KEY: process.env.AO_TELEMETRY_POSTHOG_KEY ?? "",
+		AO_TELEMETRY_POSTHOG_HOST: process.env.AO_TELEMETRY_POSTHOG_HOST ?? "",
 		// Daemon-side Sentry (5xx + panics with Go stacks). Stamped on the daemon
 		// env so the spawned daemon inherits the DSN; off in dev to match the
 		// PostHog remote gate, and an explicit env always wins. A blank value
 		// leaves the daemon's Sentry a no-op.
-		AO_SENTRY_DSN: process.env.AO_SENTRY_DSN ?? (isDev ? "" : DEFAULT_SENTRY_DSN),
+		AO_SENTRY_DSN: process.env.AO_SENTRY_DSN ?? "",
 		// The daemon binary has no version of its own that release tooling sets,
 		// so without this every daemon event lands unattributable to a release.
 		AO_TELEMETRY_APP_VERSION: process.env.AO_TELEMETRY_APP_VERSION ?? app.getVersion(),
@@ -2517,7 +2515,7 @@ ipcMain.handle("menu:action", (_event, action: string) => {
 });
 ipcMain.handle("telemetry:getBootstrap", () => {
 	if (!telemetryPolicyController) return null;
-	return buildTelemetryBootstrap({ ...process.env, AO_DATA_DIR: desktopDataDir }, app.getVersion(), process.platform, os.homedir(), app.isPackaged, telemetryPolicyController.snapshot());
+	return buildTelemetryBootstrap({ ...process.env, AO_DATA_DIR: desktopDataDir, AO_TELEMETRY_RENDERER: "off" }, app.getVersion(), process.platform, os.homedir(), app.isPackaged, telemetryPolicyController.snapshot());
 });
 ipcMain.handle("telemetry:getPolicy", () => telemetryPolicyController?.snapshot() ?? failClosedTelemetryPolicyView());
 ipcMain.handle("telemetry:setEventsEnabled", (_event, input: { eventsEnabled?: unknown; expectedGeneration?: unknown }) => {
@@ -3190,7 +3188,7 @@ app.whenReady().then(async () => {
 	const policyController = new DesktopTelemetryController({
 		authority,
 		daemon: daemonPolicy,
-		environmentAllowsEvents: rendererTelemetryEnabled(process.env, app.isPackaged),
+		environmentAllowsEvents: rendererTelemetryEnabled({ ...process.env, AO_TELEMETRY_RENDERER: "off" }, app.isPackaged),
 		transportFactory: () => initMainSentry(app.getVersion(), app.getPath("userData")),
 		visibility: agentSwitchVisibilityController,
 		clearRendererQueues: clearRendererTelemetryQueues,
